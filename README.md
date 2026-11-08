@@ -268,18 +268,3 @@ Incluye un diagrama general del cableado y, si es necesario, fotografías cercan
 
 ![Diagrama de conexiones del rover](docs/images/conexiones-electronicas.png)
 
-### 4. Herramientas y materiales
-
-Fotografías de los componentes y herramientas utilizados durante el ensamblaje y las pruebas. Por ejemplo: ESP32-S3, L298N, encoders, MPU6050, VL53L0X, batería, cables, cautín, multímetro y herramientas de montaje. Ajusta esta lista a los materiales que realmente utilizaste.
-
-![Componentes y herramientas utilizados](docs/images/herramientas-materiales.png)
-
-### 5. Pruebas y resultados
-
-Agrega evidencias de las pruebas realizadas, como el desplazamiento sobre una superficie plana, el recorrido sobre una pendiente y la visualización de las coordenadas o del perfil del terreno.
-
-| Prueba en superficie plana | Prueba en pendiente |
-|---|---|
-| ![Prueba en superficie plana](docs/images/prueba-superficie-plana.png) | ![Prueba en pendiente](docs/images/prueba-pendiente.png) |
-
-![Resultado del recorrido y reconstrucción del terreno](docs/images/resultado-recorrido.png)
