@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ROVER TOPOGRAFÍA</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Roboto,sans-serif}
+body{background:#07111f;color:#e5edf7;padding:16px;max-width:900px;margin:auto}
+header{margin-bottom:12px}
+h1{font-size:20px;letter-spacing:2px}
+.status{color:#f0bd4c;font-size:13px;margin-top:4px}
+.status.connected{color:#36d69a}
+.nav-tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.nav-tabs button{flex:1;min-width:110px;padding:12px 10px;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;background:#101e30;color:#8da3bb;border:1px solid #263c55}
+.nav-tabs button.active{background:#1677d2;color:#fff;border-color:#1677d2}
+.page{display:none}.page.active{display:block}
+
+/* CONTROL */
+.coords{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}
+.coord{background:#0a1727;border:1px solid #263c55;border-radius:10px;padding:12px 6px;text-align:center}
+.coord span{font-size:12px;color:#91a8c2}
+.coord strong{display:block;font-size:22px;color:#43d5b0;margin-top:4px}
+.coords.small .coord strong{font-size:18px;color:#78baff}
+.controls{display:grid;grid-template-columns:repeat(3,80px);justify-content:center;gap:14px;margin:26px 0 10px}
+.controls button{height:80px;font-size:24px;background:#174c7a;border:none;border-radius:15px;color:#fff;font-weight:bold;touch-action:none;user-select:none;-webkit-user-select:none}
+.controls .stop{background:#b12d42}
+.hint{text-align:center;color:#8da3bb;font-size:13px}
+.giro-panel{background:#0a1727;border:1px solid #263c55;border-radius:12px;padding:14px;margin:18px auto 14px;max-width:340px;text-align:center}
+.giro-title{font-size:12px;color:#91a8c2;letter-spacing:1px}
+.giro-big{font-size:30px;font-weight:bold;color:#78baff;margin:6px 0 10px}
+.giro-row{display:flex;gap:8px;margin-bottom:8px}
+.giro-row input,.giro-row select{min-width:0;padding:10px 6px;border-radius:8px;border:1px solid #263c55;background:#07111f;color:#e5edf7;font-size:15px;text-align:center}
+.giro-row input{flex:0 0 96px;font-size:16px}
+.giro-row select{flex:1;font-size:13px}
+.giro-btns{display:flex;gap:8px}
+.btn-giro{flex:1;border:none;border-radius:8px;font-weight:bold;font-size:14px;cursor:pointer;padding:13px 4px;color:#04251a}
+.btn-izq{background:#4aa3ff}.btn-der{background:#35d69a}
+.giro-help{font-size:11px;color:#6f87a3;margin-top:8px;line-height:1.4}
+
+/* TELEMETRÍA */
+.dashboard{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:700px){.dashboard{grid-template-columns:1fr}}
+.panel{background:#101e30;border:1px solid #263c55;border-radius:12px;padding:14px}
+.panel h2{font-size:14px;margin-bottom:12px;color:#78baff}
+.btn{border:none;border-radius:8px;color:#fff;font-weight:bold;cursor:pointer;padding:11px;width:100%;margin-bottom:8px;font-size:14px}
+.btn-reset{background:#b12d42}.btn-pausa{background:#8c3541}.btn-csv{background:#35d69a}.btn-demo{background:#2b3645}
+#map2d{width:100%;height:300px;background:#081421;border-radius:8px;border:1px solid #253b51;display:block}
+.data-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.data-item{background:#0a1727;padding:10px;border-radius:8px;border:1px solid #263c55}
+.data-item span{font-size:11px;color:#91a8c2}
+.data-item strong{display:block;margin-top:4px;font-size:17px;color:#43d5b0}
+.terminal{height:150px;overflow-y:auto;background:#020a12;padding:10px;font-family:monospace;font-size:12px;margin-top:10px;border-radius:8px;line-height:1.5}
+
+/* PERFIL 3D */
+.p3d h1{font-size:20px;letter-spacing:0;color:#ff9f55;line-height:1.2}
+.sub{color:#8c99a8;font-size:14px;margin:4px 0 8px}
+#view{width:100%;height:52vh;min-height:300px;border-radius:12px;overflow:hidden;background:#10151c;touch-action:none}
+#view canvas{display:block;width:100%;height:100%}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
+.stat{background:#1a212b;border-radius:12px;padding:12px 6px;text-align:center}
+.stat b{display:block;font-size:22px;color:#ff9f55}
+.stat span{font-size:12px;color:#aab6c3}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px}
+.row .btn{background:#fb8c3a;margin:0;padding:13px;font-size:15px}
+.legend{font-size:12px;color:#aab6c3;margin:6px 0 14px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px 0 8px}
+
+/* PERFIL TOPOGRÁFICO */
+.ptopo h1{font-size:20px;letter-spacing:0;color:#c77dff;line-height:1.2}
+#perfilCanvas{width:100%;display:block;border-radius:10px;background:#fff;margin:10px 0}
+.ptopo .stats .stat b{color:#c77dff}
+.ptopo .row .btn{background:#7b2cbf}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ROVER TOPOGRAFÍA</h1>
+  <div id="status" class="status">Conectando…</div>
+</header>
+
+<div class="nav-tabs">
+  <button id="tab-control" class="active" onclick="cambiarPestana('control')">📱 CONTROL</button>
+  <button id="tab-telemetria" onclick="cambiarPestana('telemetria')">💻 TELEMETRÍA</button>
+  <button id="tab-perfil" onclick="cambiarPestana('perfil')">🛣️ PERFIL 3D</button>
+  <button id="tab-topo" onclick="cambiarPestana('topo')">📈 PERFIL TOPOGRÁFICO</button>
+</div>
+
+<!-- ============ CONTROL ============ -->
+<div id="page-control" class="page active">
+  <div class="coords">
+    <div class="coord"><span>X (cm)</span><strong id="cX">0.0</strong></div>
+    <div class="coord"><span>Y (cm)</span><strong id="cY">0.0</strong></div>
+    <div class="coord"><span>Z (cm)</span><strong id="cZ">5.0</strong></div>
+  </div>
+  <div class="coords small">
+    <div class="coord"><span>Distancia (cm)</span><strong id="cDist">0.0</strong></div>
+    <div class="coord"><span>Pendiente (%)</span><strong id="cPend">0.0</strong></div>
+    <div class="coord"><span>Dirección</span><strong id="cDir">0°</strong></div>
+  </div>
+  <div class="controls">
+    <div></div><button data-cmd="A">A</button><div></div>
+    <button data-cmd="I">I</button>
+    <div></div>
+    <button data-cmd="D">D</button>
+    <div></div><button data-cmd="R">R</button><div></div>
+  </div>
+  <div class="giro-panel">
+    <div class="giro-title">POSICIÓN ACTUAL DEL ROVER</div>
+    <div class="giro-big" id="giroTxt">0°</div>
+    <div class="giro-row">
+      <input id="giroInput" type="number" min="0" max="360" step="1" inputmode="decimal" placeholder="grados" aria-label="Grados">
+      <select id="giroModo" aria-label="Contar desde">
+        <option value="actual">desde donde está</option>
+        <option value="inicio">desde el inicio (0°)</option>
+      </select>
+    </div>
+    <div class="giro-btns">
+      <button id="btnIzq" class="btn-giro btn-izq">◀ ENVIAR IZQUIERDA</button>
+      <button id="btnDer" class="btn-giro btn-der">ENVIAR DERECHA ▶</button>
+    </div>
+    <p class="giro-help">Gíralo con I / D, escribe cuántos grados lo moviste y pulsa el lado hacia el que giró.<br>Ejemplo: si lo giraste 90° a la derecha y luego 90° a la izquierda, queda otra vez en 0° (modo "desde donde está").</p>
+  </div>
+  <p class="hint">Mantén A o R para avanzar o retroceder. Mantén I o D para girar de a poco; luego escribe los grados y pulsa ENVIAR IZQUIERDA o ENVIAR DERECHA para que el mapa dibuje con ese rumbo.</p>
+</div>
+
+<!-- ============ TELEMETRÍA ============ -->
+<div id="page-telemetria" class="page">
+  <div class="dashboard">
+    <div class="panel">
+      <h2>MAPA 2D (vista desde arriba)</h2>
+      <button class="btn btn-reset js-reset">🔄 NUEVO MAPA</button>
+      <button class="btn btn-pausa js-pausa">⏸️ PAUSAR DIBUJO</button>
+      <canvas id="map2d"></canvas>
+    </div>
+    <div class="panel">
+      <h2>SENSORES</h2>
+      <div class="data-grid">
+        <div class="data-item"><span>X (cm)</span><strong id="tX">0.0</strong></div>
+        <div class="data-item"><span>Y (cm)</span><strong id="tY">0.0</strong></div>
+        <div class="data-item"><span>Z (cm)</span><strong id="tZ">5.0</strong></div>
+        <div class="data-item"><span>Inclinación</span><strong id="tPitch">0.0°</strong></div>
+        <div class="data-item"><span>Pulsos D</span><strong id="tPD">0</strong></div>
+        <div class="data-item"><span>Pulsos I</span><strong id="tPI">0</strong></div>
+        <div class="data-item"><span>Distancia total</span><strong id="tDist">0.0 cm</strong></div>
+        <div class="data-item"><span>Altura del monte</span><strong id="tAlt">0.0 cm</strong></div>
+        <div class="data-item"><span>Subida acumulada</span><strong id="tSub">0.0 cm</strong></div>
+        <div class="data-item"><span>VL53L0X</span><strong id="tVL">--</strong></div>
+      </div>
+      <div class="terminal" id="terminal"></div>
+    </div>
+    <div class="panel" style="grid-column:1/-1">
+      <h2>GUARDAR DATOS</h2>
+      <button class="btn btn-csv js-csv">💾 DESCARGAR CSV</button>
+      <button class="btn btn-demo js-demo">▶️ MODO DEMO (datos simulados)</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PERFIL 3D ============ -->
+<div id="page-perfil" class="page p3d">
+  <h1>Maqueta de perfil vial con carrito topográfico</h1>
+  <p class="sub">Arrastra para girar · pellizca o usa la rueda para acercar</p>
+  <div id="view"></div>
+  <div class="stats">
+    <div class="stat"><b id="sDist">0.00</b><span>Distancia (m)</span></div>
+    <div class="stat"><b id="sZ">0.05</b><span>Cota Z (m)</span></div>
+    <div class="stat"><b id="sPend">0.0</b><span>Pendiente (%)</span></div>
+    <div class="stat"><b id="sAltura">0.00</b><span>Altura del monte (m)</span></div>
+    <div class="stat"><b id="sSubida">0.00</b><span>Subida acumulada (m)</span></div>
+    <div class="stat"><b id="sPitch">0.0</b><span>Inclinación (°)</span></div>
+  </div>
+  <div class="row">
+    <button class="btn js-pausa">Pausar</button>
+    <button class="btn js-reset">Reiniciar</button>
+  </div>
+  <p class="legend"><i style="background:#e65c00"></i>Puntos levantados (nube X, Y, Z)<i style="background:#3b82f6"></i>Sensores VL53L0X<i style="background:#22c55e"></i>ESP32-S3 + IMU</p>
+</div>
+
+<!-- ============ PERFIL TOPOGRÁFICO ============ -->
+<div id="page-topo" class="page ptopo">
+  <h1>Perfil topográfico del recorrido</h1>
+  <p class="sub">Cota (Z) contra distancia recorrida. Une todo el trayecto, aunque el rover gire.</p>
+  <canvas id="perfilCanvas"></canvas>
+  <div class="stats">
+    <div class="stat"><b id="pDist">0.0</b><span>Distancia (cm)</span></div>
+    <div class="stat"><b id="pZini">0.0</b><span>Cota inicial (cm)</span></div>
+    <div class="stat"><b id="pZfin">0.0</b><span>Cota final (cm)</span></div>
+    <div class="stat"><b id="pZmax">0.0</b><span>Cota máxima (cm)</span></div>
+    <div class="stat"><b id="pZmin">0.0</b><span>Cota mínima (cm)</span></div>
+    <div class="stat"><b id="pPend">0.0</b><span>Pendiente media (%)</span></div>
+  </div>
+  <div class="row">
+    <button class="btn js-png">🖼️ DESCARGAR IMAGEN (PNG)</button>
+    <button class="btn js-pdf">📄 DESCARGAR PDF</button>
+  </div>
+  <button class="btn btn-reset js-reset">🔄 NUEVO RECORRIDO</button>
+</div>
+
+<!-- three.min.js se sirve desde el propio ESP32 (el AP no tiene internet) -->
+<script src="three.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const Z0 = 5.0, W = 30, MAXP = 2500, MIN_STEP = 1.0;
+let pts = [], csv = [], pausado = false, ws = null, demo = false, demoTimer = null;
+let ultimaDist = 0, pestana = 'control', ultimo = null;
+let perfilPts = [];                 // perfil topográfico: {s: distancia recorrida (cm), z: cota (cm)}
+const PERFIL_MAX = 20000, PERFIL_PASO = 0.5;   // máx. puntos y distancia mínima entre puntos (cm)
+
+// ===================== PESTAÑAS =====================
+function cambiarPestana(p){
+  pestana = p;
+  ['control','telemetria','perfil','topo'].forEach(n => {
+    $('page-'+n).classList.toggle('active', n === p);
+    $('tab-'+n).classList.toggle('active', n === p);
+  });
+  if (p === 'perfil') resize3D();
+  if (p === 'telemetria') dibujar2D();
+  if (p === 'topo') dibujarPerfil();
+}
+
+// ===================== TERMINAL =====================
+const term = $('terminal');
+function log(m){
+  const d = document.createElement('div');
+  d.textContent = `[${new Date().toLocaleTimeString()}] ${m}`;
+  term.appendChild(d);
+  while (term.childElementCount > 150) term.removeChild(term.firstChild);
+  term.scrollTop = term.scrollHeight;
+}
+
+// ===================== WEBSOCKET =====================
+function conectar(){
+  if (demo) return;
+  ws = new WebSocket(`ws://${location.host || '192.168.4.1'}/ws`);
+  ws.onopen = () => { $('status').textContent = 'CONECTADO AL ROVER (WiFi)'; $('status').className = 'status connected'; log('Conexión WiFi establecida.'); ws.send('C'); };
+  ws.onclose = () => { if (demo) return; $('status').textContent = 'DESCONECTADO · reintentando…'; $('status').className = 'status'; setTimeout(conectar, 2000); };
+  ws.onmessage = ev => { if (!demo) onData(JSON.parse(ev.data)); };
+}
+function enviar(c){ if (ws && ws.readyState === 1) ws.send(c); }
+conectar();
+
+// ===================== BOTONES DE CONTROL =====================
+let holdTimer = null;
+function soltarAvance(){
+  if (holdTimer){ clearInterval(holdTimer); holdTimer = null; enviar('S'); }
+}
+document.querySelectorAll('[data-cmd]').forEach(b => {
+  const c = b.dataset.cmd;
+  if (c === 'A' || c === 'R' || c === 'I' || c === 'D'){
+    // mantener presionado = avanza/retrocede/gira; al soltar = para
+    b.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      b.setPointerCapture(e.pointerId);
+      enviar(c);
+      clearInterval(holdTimer);
+      holdTimer = setInterval(() => enviar(c), 150);   // señal de "sigo presionando"
+    });
+    ['pointerup','pointercancel','lostpointercapture'].forEach(ev => b.addEventListener(ev, soltarAvance));
+    b.addEventListener('contextmenu', e => e.preventDefault());
+  } else {
+    // (sin uso: todos los botones son de mantener presionado)
+    b.addEventListener('pointerdown', e => { e.preventDefault(); enviar(c); });
+  }
+});
+// lado: +1 derecha (el rumbo sube), -1 izquierda (el rumbo baja)
+function enviarLado(lado){
+  const v = Math.abs(parseFloat($('giroInput').value));
+  if (isNaN(v)){ log('Escribe primero los grados.'); return; }
+  const base = ($('giroModo').value === 'actual') ? (ultimo ? ultimo.heading : 0) : 0;   // desde donde está o desde el inicio
+  const h = (((base + lado * v) % 360) + 360) % 360;
+  enviar('G' + h.toFixed(1));                // el rover guarda este rumbo y dibuja desde aquí
+  log(`Enviado: ${v.toFixed(1)}° a la ${lado > 0 ? 'derecha' : 'izquierda'} -> rumbo ${Math.round(h)}°`);
+  $('giroInput').blur();
+}
+$('btnDer').addEventListener('click', () => enviarLado(1));
+$('btnIzq').addEventListener('click', () => enviarLado(-1));
+window.addEventListener('blur', soltarAvance);
+document.addEventListener('visibilitychange', () => { if (document.hidden) soltarAvance(); });
+
+// ===================== DATOS =====================
+// El rumbo es el mismo número en el firmware y en pantalla (brújula):
+// derecha -> 90, 180, 270, 0 · izquierda -> 270, 180, 90, 0
+const rumboTxt = h => (((Math.round(h)) % 360) + 360) % 360;   // el rover ya manda el rumbo como brújula
+const ladoTxt = h => { const r = rumboTxt(h);
+  if (r === 0) return '0° (al frente)'; if (r === 180) return '180° (de regreso)';
+  return r < 180 ? r + '° a la derecha' : (360 - r) + '° a la izquierda'; };
+let ultimoRumbo = null;
+function onData(d){
+  d.pitch = d.pitch ?? 0; d.pendientePct = d.pendientePct ?? 0;
+  d.zMax = d.zMax ?? d.z; d.zMin = d.zMin ?? d.z; d.subidaTotal = d.subidaTotal ?? 0;
+  ultimo = d;
+
+  // Control
+  $('cX').textContent = d.x.toFixed(1); $('cY').textContent = d.y.toFixed(1); $('cZ').textContent = d.z.toFixed(1);
+  $('cDist').textContent = d.distanciaTotal.toFixed(1); $('cPend').textContent = d.pendientePct.toFixed(1);
+  $('cDir').textContent = rumboTxt(d.heading) + '°';
+  // Posición actual del rover, dicha con el lado (derecha = 90 a 180, izquierda = 270 a 180)
+  $('giroTxt').textContent = ladoTxt(d.heading);
+  // Telemetría
+  $('tX').textContent = d.x.toFixed(1); $('tY').textContent = d.y.toFixed(1); $('tZ').textContent = d.z.toFixed(1);
+  $('tPitch').textContent = d.pitch.toFixed(1) + '°';
+  $('tPD').textContent = d.pulsosDerecha ?? '--'; $('tPI').textContent = d.pulsosIzquierda ?? '--';
+  $('tDist').textContent = d.distanciaTotal.toFixed(1) + ' cm';
+  $('tAlt').textContent = (d.zMax - d.zMin).toFixed(1) + ' cm';
+  $('tSub').textContent = d.subidaTotal.toFixed(1) + ' cm';
+  $('tVL').textContent = (d.distanciaSuperficie > 0) ? d.distanciaSuperficie.toFixed(1) + ' cm' : '--';
+  // Perfil 3D
+  $('sDist').textContent = (d.distanciaTotal/100).toFixed(2);
+  $('sZ').textContent = (d.z/100).toFixed(2);
+  $('sPend').textContent = d.pendientePct.toFixed(1);
+  $('sPitch').textContent = d.pitch.toFixed(1);
+  $('sAltura').textContent = ((d.zMax - d.zMin)/100).toFixed(2);
+  $('sSubida').textContent = (d.subidaTotal/100).toFixed(2);
+
+  // Acción para el terminal
+  let accion = 'DETENIDO';
+  if (d.girando) accion = 'GIRANDO';
+  else { const dd = d.distanciaTotal - ultimaDist; if (dd > 0.05) accion = 'MOVIÉNDOSE'; }
+  if (accion !== 'DETENIDO') log(`[${accion}] X:${d.x.toFixed(1)} Y:${d.y.toFixed(1)} Z:${d.z.toFixed(1)} cm`);
+  ultimaDist = d.distanciaTotal;
+
+  // Rover 3D
+  rover.position.copy(T(d.x, d.y, d.z));
+  rover.rotation.y = -d.heading * Math.PI/180;   // rumbo horario -> giro de three.js
+  rover.rotation.z = d.pitch * Math.PI/180;
+
+  // Perfil topográfico: se registra siempre (distancia acumulada del trayecto completo vs cota)
+  registrarPerfil(d);
+
+  if (pestana === 'telemetria' && d.heading !== ultimoRumbo) dibujar2D();   // el giro enviado cambia la flecha del mapa
+  ultimoRumbo = d.heading;
+  if (csv.length < 20000) csv.push([d.x, d.y, d.z, d.pitch, d.pendientePct, d.distanciaTotal]);
+  if (pausado) return;
+  const last = pts[pts.length-1];
+  if (!last || Math.hypot(d.x-last.x, d.y-last.y, d.z-last.z) >= MIN_STEP){
+    if (pts.length >= MAXP) pts.shift();
+    pts.push({x:d.x, y:d.y, z:d.z});
+    rebuild();
+    if (pestana === 'telemetria') dibujar2D();
+  }
+}
+
+// ===================== MAPA 2D (con plano cartesiano) =====================
+function dibujar2D(){
+  const cv = $('map2d'); if (!cv.clientWidth) return;
+  cv.width = cv.clientWidth; cv.height = cv.clientHeight;
+  const ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
+
+  // Límites: siempre incluyen el origen (0,0) para que los ejes se vean
+  let minX=0,maxX=0,minY=0,maxY=0;
+  pts.forEach(p => { minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y); });
+  const pad = 30, rx = Math.max(maxX-minX, 40), ry = Math.max(maxY-minY, 40);
+  const f = Math.min((cv.width-2*pad)/rx, (cv.height-2*pad)/ry);   // misma escala en X e Y
+  const ox = (cv.width - (maxX-minX)*f)/2 - minX*f, oy = (cv.height + (maxY-minY)*f)/2 + minY*f;
+  const P = p => [ox + p.x*f, oy - p.y*f];
+
+  // ---- Plano cartesiano: cuadrícula + ejes ----
+  const nice = raw => { const m = Math.pow(10, Math.floor(Math.log10(raw))); for (const k of [1,2,5,10]) if (k*m >= raw) return k*m; };
+  const step = nice(45 / f);                                       // una línea cada ~45 px
+  const x0 = -ox/f, x1 = (cv.width-ox)/f, y0 = (oy-cv.height)/f, y1 = oy/f;
+  ctx.lineWidth = 1; ctx.strokeStyle = '#16304a'; ctx.fillStyle = '#6f87a3'; ctx.font = '10px Arial';
+  for (let k = Math.ceil(x0/step); k <= Math.floor(x1/step); k++){
+    const px = ox + k*step*f;
+    ctx.beginPath(); ctx.moveTo(px,0); ctx.lineTo(px,cv.height); ctx.stroke();
+    if (k !== 0){ ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillText(+(k*step).toFixed(2), px, Math.min(oy+12, cv.height-3)); }
+  }
+  for (let k = Math.ceil(y0/step); k <= Math.floor(y1/step); k++){
+    const py = oy - k*step*f;
+    ctx.beginPath(); ctx.moveTo(0,py); ctx.lineTo(cv.width,py); ctx.stroke();
+    if (k !== 0){ ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(+(k*step).toFixed(2), Math.max(ox-4, 26), py); }
+  }
+  // ejes principales
+  ctx.strokeStyle = '#5b7da0'; ctx.lineWidth = 1.5; ctx.fillStyle = '#5b7da0';
+  ctx.beginPath(); ctx.moveTo(0,oy); ctx.lineTo(cv.width,oy); ctx.moveTo(ox,0); ctx.lineTo(ox,cv.height); ctx.stroke();
+  // flechas
+  ctx.beginPath(); ctx.moveTo(cv.width-1,oy); ctx.lineTo(cv.width-9,oy-4); ctx.lineTo(cv.width-9,oy+4); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(ox,1); ctx.lineTo(ox-4,9); ctx.lineTo(ox+4,9); ctx.fill();
+  // nombres de ejes
+  ctx.fillStyle = '#9fc4ea'; ctx.font = 'bold 11px Arial'; ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'right'; ctx.fillText('X (cm)', cv.width-12, oy-7);
+  ctx.textAlign = 'left';  ctx.fillText('Y (cm)', ox+8, 14);
+  ctx.textAlign = 'right'; ctx.font = '10px Arial'; ctx.fillStyle = '#6f87a3'; ctx.fillText('0', ox-4, oy+12);
+  ctx.textAlign = 'left';
+
+  // ---- Flecha del rumbo actual (se ve apenas se envía un giro, aunque aún no avance) ----
+  const flecha = () => {
+    if (!ultimo) return;
+    const [fx, fy] = P({x: ultimo.x, y: ultimo.y}), a = (ultimo.heading || 0) * Math.PI / 180;
+    const ux = Math.cos(a), uy = Math.sin(a), L = 22;   // rumbo horario: 90° apunta hacia abajo
+    ctx.strokeStyle = '#ff9f55'; ctx.fillStyle = '#ff9f55'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx + ux*L, fy + uy*L); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(fx + ux*(L+7), fy + uy*(L+7));
+    ctx.lineTo(fx + ux*(L-3) - uy*5, fy + uy*(L-3) + ux*5); ctx.lineTo(fx + ux*(L-3) + uy*5, fy + uy*(L-3) - ux*5); ctx.fill();
+  };
+
+  // ---- Recorrido ----
+  if (!pts.length){ flecha(); return; }
+  ctx.beginPath();
+  pts.forEach((p,i) => { const [a,b] = P(p); i ? ctx.lineTo(a,b) : ctx.moveTo(a,b); });
+  ctx.strokeStyle = '#37c9ff'; ctx.lineWidth = 2.5; ctx.stroke();
+  const [sx,sy] = P(pts[0]); ctx.fillStyle = '#35d69a'; ctx.beginPath(); ctx.arc(sx,sy,5,0,7); ctx.fill();
+  const [ex,ey] = P(pts[pts.length-1]); ctx.fillStyle = '#ff9f55'; ctx.beginPath(); ctx.arc(ex,ey,6,0,7); ctx.fill();
+  ctx.fillStyle = '#91a8c2'; ctx.font = '11px Arial'; ctx.fillText('Inicio', sx+8, sy-6);
+  flecha();
+}
+addEventListener('resize', () => { dibujar2D(); resize3D(); if (pestana === 'topo') dibujarPerfil(); });
+
+// ===================== PERFIL TOPOGRÁFICO =====================
+function registrarPerfil(d){
+  const s = d.distanciaTotal;
+  const last = perfilPts[perfilPts.length-1];
+  if (last && s < last.s - 1){ perfilPts = []; }            // el rover reinició el mapa (distancia volvió a 0)
+  const l = perfilPts[perfilPts.length-1];
+  if (!l || s - l.s >= PERFIL_PASO){
+    if (perfilPts.length >= PERFIL_MAX) perfilPts.shift();
+    perfilPts.push({s, z:d.z});
+    if (pestana === 'topo') dibujarPerfil();
+  }
+}
+
+function pasoBonito(rango, n){
+  const raw = Math.max(rango, 1e-6) / n, m = Math.pow(10, Math.floor(Math.log10(raw)));
+  for (const k of [1,2,5,10]) if (k*m >= raw) return k*m;
+  return 10*m;
+}
+const fmtTick = (v, st) => (st < 1 ? v.toFixed(1) : String(Math.round(v)));
+
+// Dibuja el perfil en cualquier canvas. k = factor de escala (1 = pantalla, ~2.3 = exportación)
+function pintarPerfil(cv, k){
+  const ctx = cv.getContext('2d'), Wc = cv.width, Hc = cv.height;
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, Wc, Hc);
+
+  const L = 58*k, R = 18*k, Tm = 46*k, B = 54*k;
+  const pw = Wc - L - R, ph = Hc - Tm - B;
+
+  // Título
+  ctx.fillStyle = '#000'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.font = `bold ${16*k}px Arial`; ctx.fillText('Perfil topográfico', Wc/2, 28*k);
+
+  // Rangos
+  const n = perfilPts.length;
+  let smax = 20, zmin = Z0, zmax = Z0;
+  if (n){ smax = Math.max(perfilPts[n-1].s, 20); zmin = Infinity; zmax = -Infinity;
+          perfilPts.forEach(p => { if (p.z < zmin) zmin = p.z; if (p.z > zmax) zmax = p.z; }); }
+  if (zmax - zmin < 10){ const m = (zmin+zmax)/2; zmin = m-5; zmax = m+5; }
+  const padz = (zmax - zmin) * 0.08; zmin -= padz; zmax += padz;
+  const sy = pasoBonito(zmax - zmin, 6), sx = pasoBonito(smax, 8);
+  const yLo = Math.floor(zmin/sy)*sy, yHi = Math.ceil(zmax/sy)*sy, xHi = Math.ceil(smax/sx)*sx;
+  const X = s => L + (s/xHi)*pw, Y = z => Tm + ph - ((z-yLo)/(yHi-yLo))*ph;
+
+  // Área del gráfico
+  ctx.fillStyle = '#e3e3e3'; ctx.fillRect(L, Tm, pw, ph);
+  ctx.strokeStyle = '#888'; ctx.lineWidth = 1*k; ctx.strokeRect(L, Tm, pw, ph);
+
+  // Cuadrícula horizontal punteada + etiquetas
+  ctx.font = `${11*k}px Arial`; ctx.fillStyle = '#000'; ctx.strokeStyle = '#777'; ctx.lineWidth = 0.8*k;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let v = yLo; v <= yHi + sy/2; v += sy){
+    const py = Y(v);
+    ctx.setLineDash([2*k, 3*k]); ctx.beginPath(); ctx.moveTo(L, py); ctx.lineTo(L+pw, py); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillText(fmtTick(v, sy), L-6*k, py);
+  }
+  // Marcas en X
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (let v = 0; v <= xHi + sx/2; v += sx){
+    const px = X(v);
+    ctx.beginPath(); ctx.moveTo(px, Tm+ph); ctx.lineTo(px, Tm+ph+4*k); ctx.stroke();
+    ctx.fillText(fmtTick(v, sx), px, Tm+ph+6*k);
+  }
+
+  // Etiquetas de ejes
+  ctx.fillStyle = '#000'; ctx.font = `${11*k}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('Distancia recorrida (cm)', L + pw/2, Hc - 8*k);
+  ctx.save(); ctx.translate(14*k, Tm + ph/2); ctx.rotate(-Math.PI/2); ctx.fillText('Cota Z (cm)', 0, 0); ctx.restore();
+
+  // Línea del perfil
+  if (n > 1){
+    ctx.save(); ctx.beginPath(); ctx.rect(L, Tm, pw, ph); ctx.clip();
+    ctx.beginPath();
+    perfilPts.forEach((p,i) => { const a = X(p.s), b = Y(p.z); i ? ctx.lineTo(a,b) : ctx.moveTo(a,b); });
+    ctx.strokeStyle = '#800080'; ctx.lineWidth = 2.2*k; ctx.lineJoin = 'round'; ctx.stroke();
+    ctx.restore();
+  } else {
+    ctx.fillStyle = '#666'; ctx.font = `italic ${13*k}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Sin datos todavía: mueve el rover para registrar el perfil', L + pw/2, Tm + ph/2);
+  }
+
+  // Subtítulo (abajo a la izquierda, como en el ejemplo)
+  ctx.fillStyle = '#000'; ctx.font = `italic ${10*k}px Arial`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('Rover topográfico ESP32-S3 · ' + new Date().toLocaleString(), 6*k, Hc - 8*k > Tm+ph+22*k ? Hc - 8*k : Hc - 4*k);
+}
+
+function actualizarStatsPerfil(){
+  const n = perfilPts.length;
+  if (!n){ ['pDist','pZini','pZfin','pZmax','pZmin','pPend'].forEach(i => $(i).textContent = '0.0'); return; }
+  let zmin = Infinity, zmax = -Infinity;
+  perfilPts.forEach(p => { if (p.z < zmin) zmin = p.z; if (p.z > zmax) zmax = p.z; });
+  const a = perfilPts[0], b = perfilPts[n-1], dist = b.s - a.s;
+  $('pDist').textContent = dist.toFixed(1);
+  $('pZini').textContent = a.z.toFixed(1);
+  $('pZfin').textContent = b.z.toFixed(1);
+  $('pZmax').textContent = zmax.toFixed(1);
+  $('pZmin').textContent = zmin.toFixed(1);
+  $('pPend').textContent = dist > 1 ? (((b.z - a.z) / dist) * 100).toFixed(1) : '0.0';
+}
+
+function dibujarPerfil(){
+  const cv = $('perfilCanvas'); if (!cv.clientWidth) return;
+  cv.width = cv.clientWidth; cv.height = Math.round(cv.clientWidth * 0.6);
+  pintarPerfil(cv, 1);
+  actualizarStatsPerfil();
+}
+
+function nombreArchivo(ext){
+  const d = new Date(), p = v => String(v).padStart(2,'0');
+  return `perfil_topografico_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.${ext}`;
+}
+function descargarBlob(blob, nombre){
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+function canvasExport(){
+  const off = document.createElement('canvas'); off.width = 1600; off.height = 960;
+  pintarPerfil(off, 1600/700); return off;
+}
+
+// PDF mínimo hecho a mano (una página A4 horizontal con la imagen JPEG del perfil); no necesita librerías ni internet
+function crearPDF(jpeg, iw, ih){
+  const PW = 842, PH = 595, m = 30, sc = Math.min((PW-2*m)/iw, (PH-2*m-30)/ih);
+  const w = iw*sc, h = ih*sc, x = (PW-w)/2, y = (PH-h)/2 - 8;
+  const enc = new TextEncoder(), parts = [], offs = []; let len = 0;
+  const push = b => { const u = (typeof b === 'string') ? enc.encode(b) : b; parts.push(u); len += u.length; };
+  const inicio = n => { offs[n] = len; push(`${n} 0 obj\n`); };
+  push('%PDF-1.4\n');
+  inicio(1); push('<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  inicio(2); push('<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+  inicio(3); push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PW} ${PH}] /Resources << /XObject << /Im0 5 0 R >> /Font << /F1 6 0 R >> >> /Contents 4 0 R >>\nendobj\n`);
+  const fecha = new Date().toLocaleString().replace(/[()\\]/g,'');
+  const cont = `q ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm /Im0 Do Q\nBT /F1 10 Tf ${m} 18 Td (Rover topografico ESP32-S3 - ${fecha}) Tj ET\n`;
+  inicio(4); push(`<< /Length ${cont.length} >>\nstream\n${cont}endstream\nendobj\n`);
+  inicio(5); push(`<< /Type /XObject /Subtype /Image /Width ${iw} /Height ${ih} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`);
+  push(jpeg); push('\nendstream\nendobj\n');
+  inicio(6); push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n');
+  const xref = len;
+  let t = 'xref\n0 7\n0000000000 65535 f \n';
+  for (let i = 1; i <= 6; i++) t += String(offs[i]).padStart(10,'0') + ' 00000 n \n';
+  t += `trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  push(t);
+  return new Blob(parts, {type:'application/pdf'});
+}
+
+document.querySelector('.js-png').addEventListener('click', () => {
+  canvasExport().toBlob(b => descargarBlob(b, nombreArchivo('png')), 'image/png');
+});
+document.querySelector('.js-pdf').addEventListener('click', () => {
+  const off = canvasExport();
+  const b64 = off.toDataURL('image/jpeg', 0.95).split(',')[1], bin = atob(b64), u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  descargarBlob(crearPDF(u8, off.width, off.height), nombreArchivo('pdf'));
+});
+
+// ===================== ESCENA 3D (unidades = cm) =====================
+const view = $('view');
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+view.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x10151c);
+const camera = new THREE.PerspectiveCamera(45, 1, 1, 6000);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x2a3442, 0.95));
+const sun = new THREE.DirectionalLight(0xffffff, 0.8); sun.position.set(120, 250, 80); scene.add(sun);
+const grid = new THREE.GridHelper(2000, 100, 0x3a4656, 0x1d2630); grid.position.y = -0.6; scene.add(grid);
+
+function T(x, y, z){ return new THREE.Vector3(x, z - Z0, -y); }   // datos -> three (x, z, -y)
+
+function makeRibbon(color, a, b, lift){
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAXP*6), 3).setUsage(THREE.DynamicDrawUsage));
+  const idx = []; for (let i = 0; i < MAXP-1; i++){ const k = i*2; idx.push(k,k+1,k+2, k+1,k+3,k+2); }
+  g.setIndex(idx); g.setDrawRange(0, 0);
+  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({color, side:THREE.DoubleSide}));
+  m.frustumCulled = false; m.userData = {a, b, lift}; scene.add(m); return m;
+}
+const ribbons = [ makeRibbon(0x6f7a88, -W/2, W/2, 0), makeRibbon(0xdfe6ee, W/2, W/2+5, 2), makeRibbon(0xdfe6ee, -W/2-5, -W/2, 2) ];
+
+const ptGeo = new THREE.BufferGeometry();
+ptGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAXP*3), 3).setUsage(THREE.DynamicDrawUsage));
+ptGeo.setDrawRange(0, 0);
+const cloud = new THREE.Points(ptGeo, new THREE.PointsMaterial({color:0xe65c00, size:3, sizeAttenuation:true}));
+cloud.frustumCulled = false; scene.add(cloud);
+
+const rover = new THREE.Group(); rover.rotation.order = 'YZX';
+const box = (w,h,d,c,x=0,y=0,z=0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshLambertMaterial({color:c})); m.position.set(x,y,z); rover.add(m); };
+box(20,5,12,0x232b36,0,4,0); box(8,2,5,0x22c55e,-2,7.5,0); box(3,2,3,0x3b82f6,6,7.5,0);
+const wGeo = new THREE.CylinderGeometry(2.5,2.5,2,16), wMat = new THREE.MeshLambertMaterial({color:0x111111});
+[[7,2.5,7],[7,2.5,-7],[-7,2.5,7],[-7,2.5,-7]].forEach(p => { const w = new THREE.Mesh(wGeo,wMat); w.rotation.x = Math.PI/2; w.position.set(...p); rover.add(w); });
+const beamMat = new THREE.LineBasicMaterial({color:0x3b82f6});
+[-1,1].forEach(s => rover.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(8,3,s*4), new THREE.Vector3(14,-3,s*14)]), beamMat)));
+scene.add(rover);
+
+// cámara orbital propia
+const cam = {yaw:-0.9, pit:0.55, dist:110}, target = new THREE.Vector3();
+function updateCam(){
+  target.lerp(rover.position, 0.12);
+  camera.position.set(target.x + cam.dist*Math.cos(cam.pit)*Math.sin(cam.yaw), target.y + cam.dist*Math.sin(cam.pit), target.z + cam.dist*Math.cos(cam.pit)*Math.cos(cam.yaw));
+  camera.lookAt(target);
+}
+const ptrs = new Map(); let pinch0 = 0; const el = renderer.domElement;
+const pinchDist = () => { const a = [...ptrs.values()]; return Math.hypot(a[0].x-a[1].x, a[0].y-a[1].y) || 1; };
+const clampD = d => Math.max(25, Math.min(1500, d));
+el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); if (ptrs.size === 2) pinch0 = pinchDist(); });
+['pointerup','pointercancel'].forEach(ev => el.addEventListener(ev, e => ptrs.delete(e.pointerId)));
+el.addEventListener('pointermove', e => {
+  const p = ptrs.get(e.pointerId); if (!p) return;
+  const dx = e.clientX-p.x, dy = e.clientY-p.y; p.x = e.clientX; p.y = e.clientY;
+  if (ptrs.size === 1){ cam.yaw -= dx*0.008; cam.pit = Math.max(0.05, Math.min(1.5, cam.pit + dy*0.008)); }
+  else if (ptrs.size === 2){ const d = pinchDist(); if (pinch0) cam.dist = clampD(cam.dist*pinch0/d); pinch0 = d; }
+});
+el.addEventListener('wheel', e => { e.preventDefault(); cam.dist = clampD(cam.dist*(1+Math.sign(e.deltaY)*0.1)); }, {passive:false});
+function resize3D(){ const w = view.clientWidth, h = view.clientHeight; if (!w || !h) return; renderer.setSize(w,h,false); camera.aspect = w/h; camera.updateProjectionMatrix(); }
+
+function rebuild(){
+  const n = pts.length;
+  if (n < 2){ ribbons.forEach(r => r.geometry.setDrawRange(0,0)); ptGeo.setDrawRange(0,0); return; }
+  for (const r of ribbons){
+    const pos = r.geometry.attributes.position.array, {a,b,lift} = r.userData;
+    for (let i = 0; i < n; i++){
+      const p0 = pts[Math.max(i-1,0)], p1 = pts[Math.min(i+1,n-1)], p = pts[i];
+      let tx = p1.x-p0.x, ty = p1.y-p0.y; const l = Math.hypot(tx,ty) || 1; tx/=l; ty/=l;
+      const nx = -ty, ny = tx, yv = p.z - Z0 + lift;
+      pos[i*6]=p.x+nx*a; pos[i*6+1]=yv; pos[i*6+2]=-(p.y+ny*a);
+      pos[i*6+3]=p.x+nx*b; pos[i*6+4]=yv; pos[i*6+5]=-(p.y+ny*b);
+    }
+    r.geometry.attributes.position.needsUpdate = true;
+    r.geometry.setDrawRange(0,(n-1)*6); r.geometry.computeVertexNormals();
+  }
+  const pp = ptGeo.attributes.position.array;
+  for (let i = 0; i < n; i++){ pp[i*3]=pts[i].x; pp[i*3+1]=pts[i].z-Z0+3; pp[i*3+2]=-pts[i].y; }
+  ptGeo.attributes.position.needsUpdate = true; ptGeo.setDrawRange(0,n);
+}
+
+// ===================== BOTONES COMUNES =====================
+const sim = {s:0, zMax:Z0, zMin:Z0, subida:0, zPrev:Z0};
+document.querySelectorAll('.js-pausa').forEach(b => b.addEventListener('click', () => {
+  pausado = !pausado;
+  document.querySelectorAll('.js-pausa').forEach(x => {
+    x.textContent = x.closest('#page-perfil') ? (pausado ? 'Reanudar' : 'Pausar') : (pausado ? '▶️ REANUDAR' : '⏸️ PAUSAR DIBUJO');
+    if (!x.closest('#page-perfil')) x.style.background = pausado ? '#35d69a' : '#8c3541';
+  });
+}));
+document.querySelectorAll('.js-reset').forEach(b => b.addEventListener('click', () => {
+  pts = []; csv = []; perfilPts = []; sim.s = 0; ultimaDist = 0; enviar('C'); rebuild(); dibujar2D(); dibujarPerfil(); log('Nuevo mapa.');
+}));
+document.querySelector('.js-csv').addEventListener('click', () => {
+  if (!csv.length) return;
+  const txt = 'x_cm,y_cm,z_cm,pitch_deg,pendiente_pct,dist_cm\n' + csv.map(r => r.join(',')).join('\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt],{type:'text/csv'})); a.download = 'terreno_rover.csv'; a.click();
+});
+
+// ===================== MODO DEMO =====================
+const perfil = s => Z0 + 14*Math.exp(-Math.pow((s-140)/45,2)) - 5*Math.exp(-Math.pow((s-250)/30,2));
+document.querySelector('.js-demo').addEventListener('click', e => {
+  demo = !demo; pts = []; csv = []; perfilPts = []; rebuild(); dibujar2D(); dibujarPerfil();
+  e.target.textContent = demo ? '⏹️ SALIR DEL MODO DEMO' : '▶️ MODO DEMO (datos simulados)';
+  if (demo){
+    if (ws) ws.close();
+    $('status').textContent = 'MODO DEMO (datos simulados)'; $('status').className = 'status connected';
+    Object.assign(sim, {s:0, zMax:Z0, zMin:Z0, subida:0, zPrev:Z0});
+    demoTimer = setInterval(() => {
+      sim.s += 1.2;
+      const z = perfil(sim.s), dz = z - sim.zPrev; sim.zPrev = z;
+      const giro = sim.s >= 220, x = giro ? 220 : sim.s, y = giro ? sim.s-220 : 0;
+      const pitch = Math.atan2(dz, 1.2)*180/Math.PI;
+      sim.zMax = Math.max(sim.zMax,z); sim.zMin = Math.min(sim.zMin,z); if (dz > 0) sim.subida += dz;
+      onData({x,y,z,heading:giro?270:0,pitch,pendientePct:Math.tan(pitch*Math.PI/180)*100,zMax:sim.zMax,zMin:sim.zMin,subidaTotal:sim.subida,distanciaTotal:sim.s,pulsosDerecha:Math.round(sim.s/0.7854),pulsosIzquierda:Math.round(sim.s/0.7854)});
+      if (sim.s > 360) sim.s = 0;
+    }, 100);
+  } else { clearInterval(demoTimer); conectar(); }
+});
+
+(function loop(){ requestAnimationFrame(loop); if (pestana === 'perfil'){ updateCam(); renderer.render(scene, camera); } })();
+</script>
+</body>
+</html>
