@@ -28,11 +28,11 @@ const unsigned long LATIDO_MS     = 400;    // seguridad: si no llega señal del
 // --- Giro libre: gira mientras mantienes presionado I o D (a la izquierda / a la derecha) ---
 // El giro NO usa sensores: solo mueve los motores. El rumbo (en grados) lo escribes tú en la página
 // y lo envías con "ENVIAR POSICIÓN"; desde ese momento el mapa dibuja en ese ángulo.
-const int   PWM_ARRANQUE_GIRO     = 70;     // PWM con el que empieza el giro (sube gradualmente hasta VEL_GIRO)
-const unsigned long RAMPA_GIRO_MS = 400;    // tiempo de la subida gradual; sube si aún se reinicia, baja si arranca flojo
+const int   PWM_ARRANQUE_GIRO     = 200;     // PWM con el que empieza el giro (sube gradualmente hasta VEL_GIRO)
+const unsigned long RAMPA_GIRO_MS = 120;    // tiempo de la subida gradual; sube si aún se reinicia, baja si arranca flojo
 
-const int VEL_AVANCE = 100;                 // PWM 0-255 al avanzar/retroceder
-const int VEL_GIRO   = 130;                 // PWM 0-255 al girar
+const int VEL_AVANCE = 120;                 // PWM 0-255 al avanzar/retroceder
+const int VEL_GIRO   = 170;                 // PWM 0-255 al girar
 const unsigned long FRENO_MS = 40;          // freno activo al terminar
 
 const int SIGNO_AVANCE = 1;                 // pon -1 si X disminuye cuando avanzas
@@ -53,26 +53,46 @@ const float PI_VALOR = 3.14159265;
 
 // ---- Calibración de distancia ----
 // FACTOR_CALIB = distancia real / distancia que marcaba el carro.
-// Se puso en 1.0 para recalibrar manteniendo presionado (el 1.5625 anterior compensaba pulsos perdidos al frenar).
 // Para reajustar: FACTOR_CALIB_nuevo = FACTOR_CALIB_actual * (real / medido)
 const float FACTOR_CALIB = 1.325;
 const float CM_POR_PULSO = (PI_VALOR * DIAMETRO_RUEDA) / RANURAS_ENCODER * FACTOR_CALIB;
 
 // ---- Pitch (inclinación) ----
 const float Z0_CM          = 5.0;
-const float PITCH_SIGN     = 1.0;           // IMPORTANTE: al levantar la parte delantera, el pitch debe salir POSITIVO.
-                                            // Si sale negativo, cambia a -1.0
+const float PITCH_SIGN     = 1.0;           // signo del ACELERÓMETRO (interno del filtro). No lo cambies solo: debe ser coherente con GYRO_SIGN
+const float GYRO_SIGN      = -1.0;          // signo del GIROSCOPIO (interno del filtro). PITCH_SIGN y GYRO_SIGN se cambian JUNTOS o ninguno
+
+// *** SIGNO DE SALIDA ***
+// Invierte SOLO el pitch final que se usa para Z, pendiente, tendencia y pantalla (no toca el filtro).
+//  - Si al SUBIR el carrito la pendiente sale NEGATIVA y dibuja bajada  -> déjalo en -1.0
+//  - Si ya sale correcto (subir = positivo)                              -> ponlo en 1.0
+const float SALIDA_SIGN    = -1.0;
+
 const float PITCH_MUERTO   = 1.5;           // grados que se ignoran (cabeceo del chasis / ruido). Sube a 2.0-2.5 si aún se acumula
 const float K_ACEL_MOV     = 0.01;          // corrección del acelerómetro en movimiento (lenta = confía en el giroscopio)
 const float K_ACEL_QUIETO  = 0.10;          // corrección del acelerómetro con el carrito detenido (rápida)
 const float TOL_1G         = 0.05;          // solo usa el acelerómetro si |a| está dentro de 1 g ± este valor
 const int   MUESTRAS_NIVEL = 100;           // lecturas para promediar el nivel de referencia
 
+// ---- Anti-"bolea": suavizado del pitch que se usa para calcular Z ----
+// Al arrancar y al frenar el chasis cabecea y el pitch da un pico falso que dibujaba una bolea en el perfil.
+const unsigned long PITCH_TRANSITORIO_MS = 300;  // tras arrancar/frenar/girar se congela el pitch de pendiente (sube a 500 si aún hay bolea)
+const float PITCH_FILTRO    = 0.30;         // suavizado por cada 50 ms (menor = más suave pero más lento; 0.05-0.3)
+const float PITCH_MAX_DEG_S = 45.0;         // la pendiente no puede cambiar más rápido que esto (°/s); baja a 15 si aún salta
+
+// ---- Re-sincronización del pitch tras un giro (arregla el giro en U en una pendiente) ----
+// Durante el giro no se lee el MPU, así que el pitch queda "viejo". Al terminar el giro se vuelve a tomar
+// el pitch directo del acelerómetro y se salta pitchPend a ese valor.
+const unsigned long REINICIO_PITCH_MS = 150;     // espera tras el giro antes de re-sincronizar (el chasis ya debe estar quieto)
+
 Adafruit_VL53L0X vl53 = Adafruit_VL53L0X();
 bool mpuDisponible = false, vl53Disponible = false;
 
 float pitchFilt = 0, pitchOffset = 0, pitchUtil = 0;
+float pitchPend = 0;                         // pitch suavizado y sin transitorios: es el que se usa para Z, pendiente y pantalla
+unsigned long tTransitorio = 0;              // último arranque/frenada/giro
 bool  pitchInicializado = false;
+bool  reinicioPitch = false;                 // pendiente de re-sincronizar el pitch tras un giro
 unsigned long ultimoPitchUs = 0;
 float distanciaSuperficie = -1.0;
 float gyroBiasY = 0.0;                       // °/s en reposo (eje Y, para el pitch)
@@ -149,6 +169,7 @@ void fijarRumbo(float rumbo) {
 
 // ---- Avance / retroceso continuo ----
 void iniciarContinuo(int sentido) {          // +1 adelante, -1 atrás
+  tTransitorio = millis();                   // el arranque cabecea: congela el pitch un momento
   moviendo = true; girando = false; continuo = true; frenarPedido = false;
   sentidoContinuo = sentido;
   sentidoMov = sentido;                      // recuerda el sentido de marcha para la pendiente
@@ -177,6 +198,9 @@ void finalizarGiro() {                       // se soltó el botón: frena y par
   pwm(0, 0, 0, 0);
   delay(60);
   girando = false; moviendo = false; frenarPedido = false;
+  tTransitorio = millis();
+  pitchInicializado = false;                 // la próxima lectura del MPU toma el pitch del acelerómetro (el del giro quedó viejo)
+  reinicioPitch = true;                      // y pitchPend salta a ese valor cuando el chasis se asiente
   sincronizarBase();                         // los pulsos del giro no cuentan como avance
 }
 
@@ -199,7 +223,7 @@ void leerMPU6050() {
   float ax_g = (int16_t)((b[0] << 8) | b[1]) / 8192.0;     // rango ±4 g
   float ay_g = (int16_t)((b[2] << 8) | b[3]) / 8192.0;
   float az_g = (int16_t)((b[4] << 8) | b[5]) / 8192.0;
-  float gy   = ((int16_t)((b[10] << 8) | b[11]) / 131.0 - gyroBiasY) * PITCH_SIGN;   // °/s
+  float gy   = ((int16_t)((b[10] << 8) | b[11]) / 131.0 - gyroBiasY) * GYRO_SIGN;    // °/s
 
   unsigned long us = micros();
   float dt = (us - ultimoPitchUs) / 1e6;
@@ -221,7 +245,7 @@ void leerMPU6050() {
   float p = pitchFilt - pitchOffset;
   if (fabs(p) < PITCH_MUERTO) p = 0;
   else p -= (p > 0 ? 1 : -1) * PITCH_MUERTO;
-  pitchUtil = p;
+  pitchUtil = p * SALIDA_SIGN;               // signo de salida: aquí se corrige "subida dibujada como bajada"
 }
 
 void leerVL53L0X() {
@@ -231,7 +255,29 @@ void leerVL53L0X() {
   distanciaSuperficie = (m.RangeStatus != 4 && m.RangeMilliMeter < 8190) ? m.RangeMilliMeter / 10.0 : -1.0;
 }
 
+void actualizarPitchPend() {
+  static unsigned long ultimo = 0;
+  unsigned long ahora = millis();
+  float dt = (ahora - ultimo) / 1000.0;
+  ultimo = ahora;
+  if (dt <= 0 || dt > 0.5) dt = 0.05;
+
+  // Tras un giro: salta al pitch real (sin límite de rapidez) en cuanto el chasis se asienta
+  if (reinicioPitch && !moviendo && ahora - tTransitorio >= REINICIO_PITCH_MS) {
+    pitchPend = pitchUtil;
+    reinicioPitch = false;
+    return;
+  }
+
+  if (ahora - tTransitorio < PITCH_TRANSITORIO_MS) return;   // en arranque/frenada se mantiene el último valor bueno
+  if (!moviendo) { pitchPend = pitchUtil; return; }          // quieto: sigue la inclinación al instante (Z no cambia, no hace falta suavizar)
+  float paso = PITCH_FILTRO * (pitchUtil - pitchPend);       // suavizado exponencial
+  float lim = PITCH_MAX_DEG_S * dt;                          // y límite de rapidez de cambio
+  pitchPend += constrain(paso, -lim, lim);
+}
+
 void calcularCoordenadas() {
+  actualizarPitchPend();
   long actualD, actualI; leerPulsos(actualD, actualI);
   long nuevosD = actualD - pulsosAnterioresDerecha;
   long nuevosI = actualI - pulsosAnterioresIzquierda;
@@ -240,7 +286,7 @@ void calcularCoordenadas() {
   if (girando) return;                       // al girar no se mueve el mapa
 
   float dMedia = ((nuevosD + nuevosI) / 2.0) * CM_POR_PULSO;
-  float pRad = pitchUtil * PI_VALOR / 180.0;
+  float pRad = pitchPend * PI_VALOR / 180.0;
   float dHoriz = dMedia * cos(pRad);
   float dVert  = dMedia * sin(pRad);
 
@@ -263,10 +309,10 @@ void enviarTelemetria() {
   doc["x"] = x; doc["y"] = y; doc["z"] = z;
   doc["heading"] = heading;
 
-  doc["pitch"] = pitchUtil;                  // inclinación del chasis (sin cambios)
+  doc["pitch"] = pitchPend;                  // inclinación suavizada (la misma que se usa para Z)
   // Pendiente en el sentido de marcha: + sube, - baja
-  doc["pendientePct"] = tan(pitchUtil * PI_VALOR / 180.0) * 100.0 * sentidoMov;
-  doc["tendencia"] = (pitchUtil == 0) ? 0 : ((pitchUtil * sentidoMov > 0) ? 1 : -1);  // 1 subiendo, -1 bajando, 0 plano
+  doc["pendientePct"] = tan(pitchPend * PI_VALOR / 180.0) * 100.0 * sentidoMov;
+  doc["tendencia"] = (fabs(pitchPend) < 0.1) ? 0 : ((pitchPend * sentidoMov > 0) ? 1 : -1);  // 1 subiendo, -1 bajando, 0 plano
   doc["zMax"] = zMax; doc["zMin"] = zMin;
   doc["subidaTotal"] = subidaTotal;
   doc["pulsosDerecha"] = pD; doc["pulsosIzquierda"] = pI;
@@ -289,6 +335,8 @@ void reiniciarMapa() {
   x = 0; y = 0; heading = 0; distanciaTotal = 0;
   z = Z0_CM; zMax = Z0_CM; zMin = Z0_CM; subidaTotal = 0;
   pitchOffset = pitchFilt;                   // el nivel actual pasa a ser el "plano" de referencia
+  pitchPend = 0;
+  reinicioPitch = false;
 }
 
 void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
@@ -375,6 +423,7 @@ void setup() {
     }
     pitchOffset = s / MUESTRAS_NIVEL;
     Serial.printf("    nivel de referencia (pitch) = %.2f grados\n", pitchOffset);
+    Serial.printf("    signos: PITCH_SIGN=%.0f GYRO_SIGN=%.0f SALIDA_SIGN=%.0f\n", PITCH_SIGN, GYRO_SIGN, SALIDA_SIGN);
   } else {
     Serial.println("[4] MPU6050 NO responde (sin pitch)");
   }
@@ -414,6 +463,7 @@ void loop() {
       pwm(255, 255, 255, 255); delay(FRENO_MS); pwm(0, 0, 0, 0);   // freno activo y paro
       delay(60);                                                    // deja que termine de rodar
       continuo = false; moviendo = false; frenarPedido = false;
+      tTransitorio = millis();                                      // la frenada cabecea: no uses ese pitch
       calcularCoordenadas();                                        // suma lo recorrido hasta parar (antes se descartaba)
     }
   }
@@ -435,14 +485,15 @@ void loop() {
   if (ahora - tiempoCalculo >= 50) { tiempoCalculo = ahora; calcularCoordenadas(); }
 
 #if USAR_WIFI
-  if (ahora - tiempoTelemetria >= 200) { tiempoTelemetria = ahora; enviarTelemetria(); }
+  if (ahora - tiempoTelemetria >= 100) { tiempoTelemetria = ahora; enviarTelemetria(); }
 #endif
 
   if (ahora - tiempoDebug >= 1000) {
     tiempoDebug = ahora;
-    Serial.printf("%s | pitch=%.2f (filt=%.2f) | z=%.2f | x=%.1f y=%.1f | dist=%.1f | rumbo=%.1f\n",
+    // pitch = pitchUtil (con SALIDA_SIGN) | filt = interno del filtro | pend = el que se usa para Z y se manda a la página
+    Serial.printf("%s | sent=%+d | pitch=%.2f (filt=%.2f) pend=%.2f | z=%.2f | x=%.1f y=%.1f | dist=%.1f | rumbo=%.1f\n",
                   moviendo ? (girando ? "Girando" : (continuo ? "Continuo" : "Mov")) : "Detenido",
-                  pitchUtil, pitchFilt - pitchOffset, z, x, y, distanciaTotal, heading);
+                  sentidoMov, pitchUtil, pitchFilt - pitchOffset, pitchPend, z, x, y, distanciaTotal, heading);
   }
   delay(2);
 }

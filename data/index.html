@@ -203,6 +203,7 @@ h1{font-size:20px;letter-spacing:2px}
 <script>
 const $ = id => document.getElementById(id);
 const Z0 = 5.0, W = 30, MAXP = 2500, MIN_STEP = 1.0;
+const INVERTIR_Z = true;   // true = refleja la cota al dibujar (3D y perfil). Pon false para dibujar tal cual llega
 let pts = [], csv = [], pausado = false, ws = null, demo = false, demoTimer = null;
 let ultimaDist = 0, pestana = 'control', ultimo = null;
 let perfilPts = [];                 // perfil topográfico: {s: distancia recorrida (cm), z: cota (cm)}
@@ -291,6 +292,7 @@ function onData(d){
   d.pitch = d.pitch ?? 0; d.pendientePct = d.pendientePct ?? 0;
   d.zMax = d.zMax ?? d.z; d.zMin = d.zMin ?? d.z; d.subidaTotal = d.subidaTotal ?? 0;
   ultimo = d;
+  const zv = INVERTIR_Z ? 2*Z0 - d.z : d.z;   // cota que se DIBUJA (la telemetría y el CSV usan el valor real)
 
   // Control
   $('cX').textContent = d.x.toFixed(1); $('cY').textContent = d.y.toFixed(1); $('cZ').textContent = d.z.toFixed(1);
@@ -322,21 +324,21 @@ function onData(d){
   ultimaDist = d.distanciaTotal;
 
   // Rover 3D
-  rover.position.copy(T(d.x, d.y, d.z));
+  rover.position.copy(T(d.x, d.y, zv));
   rover.rotation.y = -d.heading * Math.PI/180;   // rumbo horario -> giro de three.js
-  rover.rotation.z = d.pitch * Math.PI/180;
+  rover.rotation.z = (INVERTIR_Z ? -1 : 1) * d.pitch * Math.PI/180;
 
   // Perfil topográfico: se registra siempre (distancia acumulada del trayecto completo vs cota)
-  registrarPerfil(d);
+  registrarPerfil(d, zv);
 
   if (pestana === 'telemetria' && d.heading !== ultimoRumbo) dibujar2D();   // el giro enviado cambia la flecha del mapa
   ultimoRumbo = d.heading;
   if (csv.length < 20000) csv.push([d.x, d.y, d.z, d.pitch, d.pendientePct, d.distanciaTotal]);
   if (pausado) return;
   const last = pts[pts.length-1];
-  if (!last || Math.hypot(d.x-last.x, d.y-last.y, d.z-last.z) >= MIN_STEP){
+  if (!last || Math.hypot(d.x-last.x, d.y-last.y, zv-last.z) >= MIN_STEP){
     if (pts.length >= MAXP) pts.shift();
-    pts.push({x:d.x, y:d.y, z:d.z});
+    pts.push({x:d.x, y:d.y, z:zv});
     rebuild();
     if (pestana === 'telemetria') dibujar2D();
   }
@@ -408,14 +410,14 @@ function dibujar2D(){
 addEventListener('resize', () => { dibujar2D(); resize3D(); if (pestana === 'topo') dibujarPerfil(); });
 
 // ===================== PERFIL TOPOGRÁFICO =====================
-function registrarPerfil(d){
+function registrarPerfil(d, zv){
   const s = d.distanciaTotal;
   const last = perfilPts[perfilPts.length-1];
   if (last && s < last.s - 1){ perfilPts = []; }            // el rover reinició el mapa (distancia volvió a 0)
   const l = perfilPts[perfilPts.length-1];
   if (!l || s - l.s >= PERFIL_PASO){
     if (perfilPts.length >= PERFIL_MAX) perfilPts.shift();
-    perfilPts.push({s, z:d.z});
+    perfilPts.push({s, z:zv - Z0});   // cota relativa: el perfil topográfico inicia en 0
     if (pestana === 'topo') dibujarPerfil();
   }
 }
@@ -441,7 +443,7 @@ function pintarPerfil(cv, k){
 
   // Rangos
   const n = perfilPts.length;
-  let smax = 20, zmin = Z0, zmax = Z0;
+  let smax = 20, zmin = 0, zmax = 0;
   if (n){ smax = Math.max(perfilPts[n-1].s, 20); zmin = Infinity; zmax = -Infinity;
           perfilPts.forEach(p => { if (p.z < zmin) zmin = p.z; if (p.z > zmax) zmax = p.z; }); }
   if (zmax - zmin < 10){ const m = (zmin+zmax)/2; zmin = m-5; zmax = m+5; }
@@ -659,24 +661,26 @@ document.querySelector('.js-csv').addEventListener('click', () => {
 });
 
 // ===================== MODO DEMO =====================
-const perfil = s => Z0 + 14*Math.exp(-Math.pow((s-140)/45,2)) - 5*Math.exp(-Math.pow((s-250)/30,2));
+// Bajada recta: 300 cm (3 m) de altura en 300 cm de distancia (pendiente de -100 %, ≈ -45°)
+const DEMO_ALTURA = 300, DEMO_DIST = 300, DEMO_PASO = 1.2;
+const perfil = s => Z0 - DEMO_ALTURA * Math.min(s, DEMO_DIST) / DEMO_DIST;
 document.querySelector('.js-demo').addEventListener('click', e => {
-  demo = !demo; pts = []; csv = []; perfilPts = []; rebuild(); dibujar2D(); dibujarPerfil();
+  demo = !demo; clearInterval(demoTimer); pts = []; csv = []; perfilPts = []; rebuild(); dibujar2D(); dibujarPerfil();
   e.target.textContent = demo ? '⏹️ SALIR DEL MODO DEMO' : '▶️ MODO DEMO (datos simulados)';
   if (demo){
     if (ws) ws.close();
-    $('status').textContent = 'MODO DEMO (datos simulados)'; $('status').className = 'status connected';
+    $('status').textContent = 'MODO DEMO (bajada de 3 m en 300 cm)'; $('status').className = 'status connected';
     Object.assign(sim, {s:0, zMax:Z0, zMin:Z0, subida:0, zPrev:Z0});
     demoTimer = setInterval(() => {
-      sim.s += 1.2;
+      sim.s = Math.min(sim.s + DEMO_PASO, DEMO_DIST);
       const z = perfil(sim.s), dz = z - sim.zPrev; sim.zPrev = z;
-      const giro = sim.s >= 220, x = giro ? 220 : sim.s, y = giro ? sim.s-220 : 0;
-      const pitch = Math.atan2(dz, 1.2)*180/Math.PI;
+      const x = sim.s, y = 0;                                    // avanza recto
+      const pitch = Math.atan2(dz, DEMO_PASO) * 180 / Math.PI;   // ≈ -45° (bajando)
       sim.zMax = Math.max(sim.zMax,z); sim.zMin = Math.min(sim.zMin,z); if (dz > 0) sim.subida += dz;
-      onData({x,y,z,heading:giro?270:0,pitch,pendientePct:Math.tan(pitch*Math.PI/180)*100,zMax:sim.zMax,zMin:sim.zMin,subidaTotal:sim.subida,distanciaTotal:sim.s,pulsosDerecha:Math.round(sim.s/0.7854),pulsosIzquierda:Math.round(sim.s/0.7854)});
-      if (sim.s > 360) sim.s = 0;
+      onData({x,y,z,heading:0,pitch,pendientePct:Math.tan(pitch*Math.PI/180)*100,zMax:sim.zMax,zMin:sim.zMin,subidaTotal:sim.subida,distanciaTotal:sim.s,pulsosDerecha:Math.round(sim.s/0.7854),pulsosIzquierda:Math.round(sim.s/0.7854)});
+      if (sim.s >= DEMO_DIST) clearInterval(demoTimer);          // termina al llegar abajo
     }, 100);
-  } else { clearInterval(demoTimer); conectar(); }
+  } else { conectar(); }
 });
 
 (function loop(){ requestAnimationFrame(loop); if (pestana === 'perfil'){ updateCam(); renderer.render(scene, camera); } })();
